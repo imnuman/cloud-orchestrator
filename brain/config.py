@@ -58,11 +58,21 @@ class Settings(BaseSettings):
     # Sourcing Configuration
     sourcing_enabled: bool = False  # Must explicitly enable
     sourcing_interval_seconds: int = 300  # 5 minutes
-    sourcing_max_price_per_hour: float = 0.50
-    sourcing_target_gpu_types: list[str] = ["RTX 4090", "RTX 3090"]
+    sourcing_max_price_per_hour: float = 5.00  # Default max, use gpu_max_prices for specific
+    sourcing_target_gpu_types: list[str] = ["RTX 4090", "RTX 3090", "A100", "H100"]
     sourcing_min_vram_mb: int = 24000
     sourcing_min_reliability: float = 0.95
-    sourcing_max_instances: int = 5  # Hard limit on auto-provisioned nodes
+    sourcing_max_instances: int = 10  # Hard limit on auto-provisioned nodes
+
+    # GPU-specific max prices for sourcing (realistic 2026 market rates)
+    sourcing_gpu_max_prices: dict = {
+        "RTX 3090": 0.45,
+        "RTX 4090": 0.55,
+        "A100 40GB": 2.50,
+        "A100 80GB": 3.50,
+        "H100 80GB": 5.00,
+        "H100 SXM": 5.50,
+    }
 
     # Provisioning Configuration
     auto_provisioning_enabled: bool = False  # Search only by default

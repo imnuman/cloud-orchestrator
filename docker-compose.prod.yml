@@ -1,0 +1,89 @@
+version: "3.8"
+
+# Production Docker Compose
+# Usage: docker-compose -f docker-compose.prod.yml up -d
+
+services:
+  # Brain API Server (Production)
+  brain:
+    build:
+      context: .
+      dockerfile: Dockerfile.brain
+    container_name: gpu-brain
+    restart: always
+    env_file:
+      - .env.production
+    environment:
+      - DEBUG=false
+      - USE_MOCK_PROVIDERS=false
+    ports:
+      - "8000:8000"
+    command: >
+      gunicorn brain.main:app
+      --workers 4
+      --worker-class uvicorn.workers.UvicornWorker
+      --bind 0.0.0.0:8000
+      --timeout 120
+      --keep-alive 5
+      --access-logfile -
+      --error-logfile -
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Celery Worker (Background Tasks)
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.brain
+    container_name: gpu-celery-worker
+    restart: always
+    env_file:
+      - .env.production
+    environment:
+      - DEBUG=false
+      - USE_MOCK_PROVIDERS=false
+    command: >
+      celery -A brain.tasks.celery_app worker
+      --loglevel=info
+      --concurrency=4
+      --max-tasks-per-child=1000
+    healthcheck:
+      test: ["CMD", "celery", "-A", "brain.tasks.celery_app", "inspect", "ping"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Celery Beat (Task Scheduler)
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.brain
+    container_name: gpu-celery-beat
+    restart: always
+    env_file:
+      - .env.production
+    command: >
+      celery -A brain.tasks.celery_app beat
+      --loglevel=info
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# Note: In production, use managed PostgreSQL and Redis services
+# (Neon, Supabase, Upstash, etc.) instead of running them in containers
