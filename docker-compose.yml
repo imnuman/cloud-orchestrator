@@ -1,0 +1,100 @@
+version: "3.8"
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: gpu-orchestrator-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gpu_orchestrator
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis (for Celery task queue)
+  redis:
+    image: redis:7-alpine
+    container_name: gpu-orchestrator-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Brain API Server
+  brain:
+    build:
+      context: .
+      dockerfile: Dockerfile.brain
+    container_name: gpu-orchestrator-brain
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/gpu_orchestrator
+      - REDIS_URL=redis://redis:6379/0
+      - DEBUG=true
+      - JWT_SECRET_KEY=change-me-in-production
+      - DEFAULT_MARKUP_PERCENT=25
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./brain:/app/brain
+      - ./shared:/app/shared
+    command: uvicorn brain.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker (for background tasks)
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.brain
+    container_name: gpu-orchestrator-celery-worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/gpu_orchestrator
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./brain:/app/brain
+      - ./shared:/app/shared
+    command: celery -A brain.tasks.celery_app worker --loglevel=info
+
+  # Celery Beat (for scheduled tasks)
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.brain
+    container_name: gpu-orchestrator-celery-beat
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/gpu_orchestrator
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./brain:/app/brain
+      - ./shared:/app/shared
+    command: celery -A brain.tasks.celery_app beat --loglevel=info
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,0 +1,29 @@
+# Brain (Control Plane) Requirements
+
+# Web Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Database
+sqlalchemy[asyncio]>=2.0.25
+asyncpg>=0.29.0
+alembic>=1.13.0
+
+# Task Queue
+celery>=5.3.6
+redis>=5.0.1
+
+# Authentication
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# Validation & Settings
+pydantic>=2.6.0
+pydantic-settings>=2.1.0
+
+# HTTP Client (for provider adapters)
+httpx>=0.26.0
+
+# Utilities
+python-dotenv>=1.0.0

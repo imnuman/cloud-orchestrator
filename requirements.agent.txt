@@ -1,0 +1,14 @@
+# Agent (Data Plane) Requirements
+
+# HTTP Client
+httpx>=0.26.0
+
+# Validation & Settings
+pydantic>=2.6.0
+pydantic-settings>=2.1.0
+
+# Docker SDK
+docker>=7.0.0
+
+# Utilities
+python-dotenv>=1.0.0

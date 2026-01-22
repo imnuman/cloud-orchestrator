@@ -1,0 +1,37 @@
+# Agent (Data Plane) Dockerfile
+# This Dockerfile is for testing/development
+# In production, agents run directly on GPU hosts
+
+FROM nvidia/cuda:12.2-runtime-ubuntu22.04
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3.12 \
+    python3.12-venv \
+    python3.12-dev \
+    python3-pip \
+    docker.io \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create symlink for python
+RUN ln -s /usr/bin/python3.12 /usr/bin/python
+
+# Copy requirements
+COPY requirements.agent.txt .
+RUN pip install --no-cache-dir -r requirements.agent.txt
+
+# Copy application code
+COPY agent/ /app/agent/
+COPY shared/ /app/shared/
+
+# Set Python path
+ENV PYTHONPATH=/app
+
+# Create directories
+RUN mkdir -p /etc/gpu-agent /var/log/gpu-agent /var/lib/gpu-agent
+
+# Default command
+CMD ["python", "-m", "agent.agent"]
