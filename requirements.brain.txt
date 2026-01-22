@@ -25,5 +25,8 @@ pydantic-settings>=2.1.0
 # HTTP Client (for provider adapters)
 httpx>=0.26.0
 
+# Payments
+stripe>=8.0.0
+
 # Utilities
 python-dotenv>=1.0.0

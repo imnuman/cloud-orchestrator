@@ -37,6 +37,16 @@ class User(Base):
     total_spent: Mapped[float] = mapped_column(Float, default=0.0)
     credit_limit: Mapped[float] = mapped_column(Float, default=0.0)
 
+    # Stripe integration
+    stripe_customer_id: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True, index=True
+    )
+
+    # Auto-refill settings
+    auto_refill_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    auto_refill_threshold: Mapped[float] = mapped_column(Float, default=10.0)
+    auto_refill_amount: Mapped[float] = mapped_column(Float, default=50.0)
+
     # Provider info (Phase 2)
     provider_earnings: Mapped[float] = mapped_column(Float, default=0.0)
     provider_payout_email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

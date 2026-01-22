@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     minimum_balance_for_pod: float = 1.0  # Minimum balance to start a pod
     low_balance_warning_threshold: float = 5.0  # Warn user when balance below this
 
+    # Stripe Payments
+    stripe_secret_key: Optional[str] = None  # sk_test_xxx or sk_live_xxx
+    stripe_publishable_key: Optional[str] = None  # pk_test_xxx or pk_live_xxx
+    stripe_webhook_secret: Optional[str] = None  # whsec_xxx
+    stripe_enabled: bool = False  # Enable Stripe payments
+
     # Node Management
     heartbeat_timeout_seconds: int = 90  # Mark node offline after missing heartbeats
     heartbeat_interval_seconds: int = 30  # Expected heartbeat interval
