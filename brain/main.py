@@ -20,6 +20,8 @@ from brain.routes import (
     users_router,
     providers_router,
     models_router,
+    proxy_router,
+    websocket_router,
 )
 
 settings = get_settings()
@@ -76,6 +78,16 @@ app.include_router(pods_router, prefix=settings.api_prefix)
 app.include_router(users_router, prefix=settings.api_prefix)
 app.include_router(providers_router, prefix=settings.api_prefix)
 app.include_router(models_router, prefix=settings.api_prefix)
+
+# Model proxy routes (OpenAI-compatible API)
+# Mounted at /api/v1/v1/* to provide /api/v1/v1/chat/completions etc.
+# Also mount at root for direct API access
+app.include_router(proxy_router, prefix=settings.api_prefix)
+app.include_router(proxy_router, prefix="")  # Also at root for direct access
+
+# WebSocket routes for real-time streaming
+app.include_router(websocket_router, prefix=settings.api_prefix)
+app.include_router(websocket_router, prefix="")  # Also at root for direct access
 
 
 @app.get("/")

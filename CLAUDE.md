@@ -295,6 +295,74 @@ Voice pipeline models for real-time voice agents:
 - **Bark** - Text-to-audio with music and sound effects
 - **Parler TTS** - Lightweight, fast text-to-speech
 
+### User-Facing API (Model Proxy)
+
+Users access their deployed models via OpenAI-compatible API endpoints:
+
+**Authentication:** Include deployment API key in requests:
+- `Authorization: Bearer sk_xxxx`
+- `X-API-Key: sk_xxxx`
+
+**OpenAI-Compatible REST Endpoints:**
+| Endpoint | Description |
+|----------|-------------|
+| `POST /v1/chat/completions` | Chat completions (LLMs) |
+| `POST /v1/completions` | Text completions |
+| `POST /v1/embeddings` | Text embeddings |
+| `POST /v1/audio/transcriptions` | Speech-to-text (Whisper) |
+| `POST /v1/audio/speech` | Text-to-speech |
+| `POST /v1/images/generations` | Image generation |
+| `GET /v1/models` | List available models |
+
+**Example Usage (Python):**
+```python
+from openai import OpenAI
+
+# Point to your deployment
+client = OpenAI(
+    base_url="https://your-platform.com/v1",
+    api_key="sk_xxxx",  # Deployment API key
+)
+
+response = client.chat.completions.create(
+    model="llama-3.1-70b",
+    messages=[{"role": "user", "content": "Hello!"}],
+    stream=True,
+)
+for chunk in response:
+    print(chunk.choices[0].delta.content, end="")
+```
+
+**WebSocket Endpoints (Real-Time Voice):**
+| Endpoint | Description |
+|----------|-------------|
+| `WS /ws/audio/transcriptions?api_key=sk_xxx` | Real-time STT |
+| `WS /ws/audio/speech?api_key=sk_xxx` | Real-time TTS |
+| `WS /ws/voice-agent?api_key=sk_xxx` | Bidirectional voice agent |
+
+**Voice Agent WebSocket Protocol:**
+```javascript
+// Connect
+const ws = new WebSocket("wss://platform.com/ws/voice-agent?api_key=sk_xxx");
+
+// Configure
+ws.send(JSON.stringify({type: "config", system_prompt: "You are a helpful assistant."}));
+
+// Send audio chunks (PCM 16-bit, 16kHz)
+ws.send(audioChunk);
+
+// Receive events
+ws.onmessage = (event) => {
+    if (typeof event.data === 'string') {
+        const msg = JSON.parse(event.data);
+        // msg.type: "transcription", "response", "audio_start", "audio_end"
+    } else {
+        // Binary audio data (agent speech)
+        playAudio(event.data);
+    }
+};
+```
+
 ## New Models (Phase 2)
 
 ```
@@ -305,10 +373,13 @@ Voice pipeline models for real-time voice agents:
 /brain/routes/
 ├── providers.py         # /providers/* - Provider portal
 ├── models.py            # /models/* - Model catalog & deployments
+├── proxy.py             # /v1/* - OpenAI-compatible model API
+├── websocket.py         # /ws/* - Real-time voice streaming
 
 /brain/services/
 ├── payouts.py           # Payout processing (crypto + PayPal)
 ├── model_deployment.py  # Model deployment orchestration
+├── model_proxy.py       # Request routing to deployed models
 
 /brain/tasks/
 ├── model_health.py      # Deployment provisioning, health checks, billing
