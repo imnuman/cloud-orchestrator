@@ -14,6 +14,7 @@ from shared.schemas import NodeStatus, ProviderType
 if TYPE_CHECKING:
     from brain.models.pod import Pod
     from brain.models.provisioned_instance import ProvisionedInstance
+    from brain.models.provider import Provider
 
 
 class Node(Base):
@@ -49,6 +50,13 @@ class Node(Base):
         ForeignKey("users.id"),
         nullable=True,
     )  # For Phase 2: Community providers
+
+    # Provider relationship (Phase 2: Community GPU Onboarding)
+    provider_user_id: Mapped[Optional[str]] = mapped_column(
+        ForeignKey("providers.id"),
+        nullable=True,
+        index=True,
+    )  # Links to Provider model for community providers
 
     # GPU Information
     gpu_model: Mapped[str] = mapped_column(String(255), index=True)
@@ -92,6 +100,11 @@ class Node(Base):
         back_populates="node",
         uselist=False,
         foreign_keys="ProvisionedInstance.node_id",
+    )
+    provider: Mapped[Optional["Provider"]] = relationship(
+        "Provider",
+        back_populates="nodes",
+        foreign_keys=[provider_user_id],
     )
 
     def __repr__(self) -> str:

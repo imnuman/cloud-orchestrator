@@ -60,22 +60,31 @@ alembic upgrade head
 │   ├── node.py          # GPU worker nodes
 │   ├── pod.py           # Container instances
 │   ├── billing.py       # Transactions, UsageRecord
-│   └── provisioned_instance.py  # Auto-provisioned GPU instances
+│   ├── provisioned_instance.py  # Auto-provisioned GPU instances
+│   ├── provider.py      # Provider, Payout, ProviderEarning (Phase 2A)
+│   └── model_catalog.py # ModelTemplate, Deployment (Phase 2B)
 ├── /routes              # FastAPI routers
 │   ├── auth.py          # /auth/* - JWT login/register
 │   ├── dashboard.py     # /dashboard/* - unified dashboard API
 │   ├── nodes.py         # /nodes/* - agent registration/heartbeat + install.sh
 │   ├── pods.py          # /pods/* - pod CRUD
-│   └── users.py         # /users/* - balance, transactions
+│   ├── users.py         # /users/* - balance, transactions
+│   ├── providers.py     # /providers/* - provider portal (Phase 2A)
+│   └── models.py        # /models/* - model catalog & deployments (Phase 2B)
 ├── /tasks               # Celery background tasks
 │   ├── celery_app.py    # Celery config + beat schedule
 │   ├── billing.py       # bill_running_pods (every 60s)
 │   ├── health.py        # check_node_health (every 30s)
-│   └── sourcing.py      # GPU sourcing tasks (search, provision, cost tracking)
+│   ├── sourcing.py      # GPU sourcing tasks (search, provision, cost tracking)
+│   └── model_health.py  # Model deployment tasks (Phase 2B)
 ├── /services            # Business logic services
 │   ├── multi_provider.py   # MultiProviderService - cross-provider aggregation
 │   ├── sourcing.py         # SourcingService - GPU offer discovery
-│   └── provisioning.py     # ProvisioningService - instance lifecycle
+│   ├── provisioning.py     # ProvisioningService - instance lifecycle
+│   ├── payouts.py          # PayoutService - provider payouts (Phase 2A)
+│   └── model_deployment.py # ModelDeploymentService (Phase 2B)
+├── /scripts             # Management scripts
+│   └── seed_model_catalog.py  # Seed model templates
 └── /adapters            # Provider integrations
     ├── base.py          # BaseProviderAdapter abstract class
     ├── /vast_ai         # Vast.ai integration
@@ -219,7 +228,102 @@ The sourcing system discovers and provisions GPU instances from providers automa
 - Unified API and billing
 - Automatic failover across providers
 
-**Phase 2 (planned):** Marketplace
-- Community providers list their GPUs
-- Platform takes transaction fee
-- Provider verification system
+**Phase 2 (implemented):** Community GPU Marketplace + AI Model Serving
+
+### Phase 2A: Community GPU Onboarding
+
+Community providers (crypto miners, GPU owners) can rent out their hardware:
+
+```bash
+# One-liner install for providers
+curl -sSL https://brain-url/api/v1/nodes/install.sh | bash -s -- --provider-key=pk_xxxx
+```
+
+**Provider API Endpoints:**
+| Endpoint | Description |
+|----------|-------------|
+| `POST /providers/register` | Register as a GPU provider |
+| `GET /providers/dashboard` | Earnings, node status, analytics |
+| `GET /providers/nodes` | List provider's nodes |
+| `PATCH /providers/nodes/{id}/pricing` | Set custom pricing |
+| `GET /providers/payouts` | Payout history |
+| `POST /providers/payouts/request` | Request payout |
+
+**Revenue Split Tiers:**
+| Tier | Platform Fee | Provider Gets | Requirements |
+|------|--------------|---------------|--------------|
+| Basic | 20% | 80% | Email verified |
+| Verified | 15% | 85% | Identity verified |
+| Pro | 10% | 90% | Business verified |
+
+**Payout Methods:** Crypto (USDC/USDT) or PayPal
+
+### Phase 2B: AI Model Catalog
+
+One-click deployment of open-source AI models with pay-per-GPU-hour billing:
+
+**Model API Endpoints:**
+| Endpoint | Description |
+|----------|-------------|
+| `GET /models` | List available models |
+| `GET /models/{slug}` | Model details |
+| `POST /models/{slug}/deploy` | Deploy model instance |
+| `GET /models/deployments` | User's active deployments |
+| `DELETE /models/deployments/{id}` | Stop deployment |
+| `GET /models/deployments/{id}/metrics` | GPU utilization, requests/sec |
+
+**Pre-built Model Templates:**
+| Category | Models | Docker Image | Min VRAM |
+|----------|--------|--------------|----------|
+| Text/LLM | Llama 3.1, Mistral, Qwen, DeepSeek | vLLM | 16-80GB |
+| Image Gen | SDXL, Flux | ComfyUI | 12-48GB |
+| Voice/Audio | Whisper, Coqui TTS, Bark | Custom | 6-16GB |
+| Code | DeepSeek Coder V2 | vLLM | 24-48GB |
+| Multimodal | LLaVA | vLLM | 40-80GB |
+| Embedding | BGE Large | TEI | 4-8GB |
+
+**Seed the Model Catalog:**
+```bash
+python -m brain.scripts.seed_model_catalog
+```
+
+### Phase 2C: Voice Agent Support
+
+Voice pipeline models for real-time voice agents:
+- **Whisper Large V3** - Speech-to-text transcription
+- **Coqui XTTS v2** - Zero-shot voice cloning and multilingual TTS
+- **Bark** - Text-to-audio with music and sound effects
+- **Parler TTS** - Lightweight, fast text-to-speech
+
+## New Models (Phase 2)
+
+```
+/brain/models/
+├── provider.py          # Provider, Payout, ProviderEarning
+├── model_catalog.py     # ModelTemplate, Deployment, ModelUsageLog
+
+/brain/routes/
+├── providers.py         # /providers/* - Provider portal
+├── models.py            # /models/* - Model catalog & deployments
+
+/brain/services/
+├── payouts.py           # Payout processing (crypto + PayPal)
+├── model_deployment.py  # Model deployment orchestration
+
+/brain/tasks/
+├── model_health.py      # Deployment provisioning, health checks, billing
+
+/brain/scripts/
+├── seed_model_catalog.py  # Seed 15+ model templates
+```
+
+## Celery Beat Schedule (Updated)
+
+| Task | Schedule | Description |
+|------|----------|-------------|
+| `bill-running-pods` | 60s | Charge for pod usage |
+| `check-node-health` | 30s | Mark offline nodes |
+| `provision-pending-deployments` | 30s | Provision model deployments |
+| `check-deployment-health` | 30s | Health check deployments |
+| `update-deployment-statuses` | 15s | Sync deployment/pod status |
+| `bill-model-deployments` | 60s | Bill for model runtime |

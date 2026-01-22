@@ -17,6 +17,7 @@ celery_app = Celery(
         "brain.tasks.billing",
         "brain.tasks.health",
         "brain.tasks.sourcing",
+        "brain.tasks.model_health",
     ],
 )
 
@@ -74,5 +75,30 @@ celery_app.conf.beat_schedule = {
     "terminate-failed-instances": {
         "task": "brain.tasks.sourcing.terminate_failed_instances",
         "schedule": 600,
+    },
+    # Model Deployments: Provision pending every 30 seconds
+    "provision-pending-deployments": {
+        "task": "brain.tasks.model_health.provision_pending_deployments",
+        "schedule": 30,
+    },
+    # Model Deployments: Health check every 30 seconds
+    "check-deployment-health": {
+        "task": "brain.tasks.model_health.check_deployment_health",
+        "schedule": 30,
+    },
+    # Model Deployments: Update statuses every 15 seconds
+    "update-deployment-statuses": {
+        "task": "brain.tasks.model_health.update_deployment_statuses",
+        "schedule": 15,
+    },
+    # Model Deployments: Bill every minute
+    "bill-model-deployments": {
+        "task": "brain.tasks.model_health.bill_model_deployments",
+        "schedule": 60,
+    },
+    # Model Deployments: Cleanup stopped every 5 minutes
+    "cleanup-stopped-deployments": {
+        "task": "brain.tasks.model_health.cleanup_stopped_deployments",
+        "schedule": 300,
     },
 }

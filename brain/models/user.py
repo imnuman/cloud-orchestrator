@@ -13,6 +13,7 @@ from brain.models.base import Base
 if TYPE_CHECKING:
     from brain.models.pod import Pod
     from brain.models.billing import Transaction
+    from brain.models.provider import Provider
 
 
 class User(Base):
@@ -51,6 +52,9 @@ class User(Base):
     pods: Mapped[list["Pod"]] = relationship("Pod", back_populates="user", lazy="selectin")
     transactions: Mapped[list["Transaction"]] = relationship(
         "Transaction", back_populates="user", lazy="selectin"
+    )
+    provider: Mapped[Optional["Provider"]] = relationship(
+        "Provider", back_populates="user", uselist=False, lazy="selectin"
     )
 
     def __repr__(self) -> str:

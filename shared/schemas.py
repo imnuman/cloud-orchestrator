@@ -92,6 +92,7 @@ class NodeRegistrationRequest(BaseModel):
     provider_id: Optional[str] = Field(None, description="Provider's instance ID (for auto-provisioned nodes)")
     hourly_price: Optional[float] = Field(None, description="Price set by provider (Phase 2)")
     api_key: Optional[str] = Field(None, description="Agent API key for authentication")
+    provider_key: Optional[str] = Field(None, description="Provider key for community GPU providers (Phase 2)")
 
 
 class NodeRegistrationResponse(BaseModel):

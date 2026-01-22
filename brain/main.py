@@ -18,6 +18,8 @@ from brain.routes import (
     nodes_router,
     pods_router,
     users_router,
+    providers_router,
+    models_router,
 )
 
 settings = get_settings()
@@ -72,6 +74,8 @@ app.include_router(dashboard_router, prefix=settings.api_prefix)
 app.include_router(nodes_router, prefix=settings.api_prefix)
 app.include_router(pods_router, prefix=settings.api_prefix)
 app.include_router(users_router, prefix=settings.api_prefix)
+app.include_router(providers_router, prefix=settings.api_prefix)
+app.include_router(models_router, prefix=settings.api_prefix)
 
 
 @app.get("/")
