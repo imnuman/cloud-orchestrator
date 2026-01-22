@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum as PyEnum
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import String, Float, Integer, Enum, ForeignKey, Text
+from sqlalchemy import String, Float, Integer, Enum, ForeignKey, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from brain.models.base import Base
@@ -66,8 +66,8 @@ class Transaction(Base):
         nullable=True,
     )
 
-    # Metadata
-    metadata: Mapped[Optional[dict]] = mapped_column(default=dict)
+    # Extra data
+    extra_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="transactions")

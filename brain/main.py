@@ -9,8 +9,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from brain.config import get_settings
+from brain.middleware.rate_limit import RateLimitMiddleware
+from brain.middleware.security import SecurityHeadersMiddleware
 from brain.models.base import init_db
-from brain.routes import auth_router, nodes_router, pods_router, users_router
+from brain.routes import (
+    auth_router,
+    dashboard_router,
+    nodes_router,
+    pods_router,
+    users_router,
+)
 
 settings = get_settings()
 
@@ -36,6 +44,19 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Security headers middleware (first in chain)
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    enable_hsts=settings.environment == "production",
+    enable_csp=True,
+)
+
+# Rate limiting middleware
+app.add_middleware(
+    RateLimitMiddleware,
+    exclude_paths=["/", "/health", "/docs", "/redoc", "/openapi.json"],
+)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -47,6 +68,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth_router, prefix=settings.api_prefix)
+app.include_router(dashboard_router, prefix=settings.api_prefix)
 app.include_router(nodes_router, prefix=settings.api_prefix)
 app.include_router(pods_router, prefix=settings.api_prefix)
 app.include_router(users_router, prefix=settings.api_prefix)

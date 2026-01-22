@@ -69,7 +69,7 @@ async def _search_and_provision_async():
                 "max_instances": settings.sourcing_max_instances,
             }
 
-        # Search for offers
+        # Search for offers from all providers
         best_offers = await sourcing_service.get_cheapest_per_type()
 
         result = {
@@ -77,34 +77,44 @@ async def _search_and_provision_async():
             "offers_found": {},
             "provisioned": [],
             "current_instances": current_count,
+            "provider_health": sourcing_service.get_provider_health(),
         }
 
-        for gpu_type, offer in best_offers.items():
-            if offer:
+        for gpu_type, agg_offer in best_offers.items():
+            if agg_offer:
+                offer = agg_offer.offer
                 result["offers_found"][gpu_type] = {
-                    "offer_id": offer.id,
-                    "price": offer.dph_total,
-                    "reliability": offer.reliability2,
-                    "location": offer.geolocation,
+                    "offer_id": offer.offer_id,
+                    "provider": offer.provider,
+                    "price": offer.hourly_price,
+                    "vram_mb": offer.gpu_vram_mb,
+                    "reliability": offer.reliability_score,
+                    "location": offer.location,
+                    "value_score": agg_offer.value_score,
                 }
 
-                # Auto-provision if enabled and under limit
+                # Auto-provision with failover if enabled and under limit
                 if (
                     settings.auto_provisioning_enabled
                     and current_count < settings.sourcing_max_instances
                 ):
                     logger.info(
-                        f"Auto-provisioning {gpu_type} at ${offer.dph_total}/hr"
+                        f"Auto-provisioning {gpu_type} via {offer.provider} "
+                        f"at ${offer.hourly_price}/hr"
                     )
                     async with async_session_maker() as db:
-                        instance = await provisioning_service.provision_from_offer(
-                            offer, db
+                        # Use the new failover-enabled provisioning
+                        instance = await provisioning_service.provision_with_failover(
+                            gpu_type=gpu_type,
+                            db=db,
+                            max_price=offer.hourly_price * 1.1,  # 10% buffer
                         )
                         await db.commit()
                         result["provisioned"].append({
                             "instance_id": str(instance.id),
                             "gpu_type": gpu_type,
-                            "price": offer.dph_total,
+                            "provider": instance.provider_type.value,
+                            "price": instance.hourly_cost,
                         })
                         current_count += 1
             else:

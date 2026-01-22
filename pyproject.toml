@@ -42,6 +42,9 @@ dev = [
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.packages.find]
+include = ["brain*", "agent*", "shared*"]
+
 [tool.black]
 line-length = 100
 target-version = ["py311", "py312"]

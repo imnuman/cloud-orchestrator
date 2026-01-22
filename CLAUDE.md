@@ -51,6 +51,9 @@ alembic upgrade head
 /brain                    # Control Plane (FastAPI)
 ├── main.py              # App entry, routers mounted
 ├── config.py            # Pydantic settings (env vars)
+├── /middleware          # Custom middleware
+│   ├── rate_limit.py    # Rate limiting (60/min, 1000/hr)
+│   └── security.py      # Security headers middleware
 ├── /models              # SQLAlchemy AsyncORM models
 │   ├── base.py          # DB session, Base class
 │   ├── user.py          # User auth, balance
@@ -60,6 +63,7 @@ alembic upgrade head
 │   └── provisioned_instance.py  # Auto-provisioned GPU instances
 ├── /routes              # FastAPI routers
 │   ├── auth.py          # /auth/* - JWT login/register
+│   ├── dashboard.py     # /dashboard/* - unified dashboard API
 │   ├── nodes.py         # /nodes/* - agent registration/heartbeat + install.sh
 │   ├── pods.py          # /pods/* - pod CRUD
 │   └── users.py         # /users/* - balance, transactions
@@ -69,14 +73,23 @@ alembic upgrade head
 │   ├── health.py        # check_node_health (every 30s)
 │   └── sourcing.py      # GPU sourcing tasks (search, provision, cost tracking)
 ├── /services            # Business logic services
-│   ├── sourcing.py      # SourcingService - GPU offer discovery
-│   └── provisioning.py  # ProvisioningService - instance lifecycle
+│   ├── multi_provider.py   # MultiProviderService - cross-provider aggregation
+│   ├── sourcing.py         # SourcingService - GPU offer discovery
+│   └── provisioning.py     # ProvisioningService - instance lifecycle
 └── /adapters            # Provider integrations
     ├── base.py          # BaseProviderAdapter abstract class
-    └── /vast_ai         # Vast.ai integration
-        ├── client.py    # VastClient (auto-mocks when no API key)
-        ├── mock.py      # MockVastClient for development
-        └── schemas.py   # Vast.ai Pydantic models
+    ├── /vast_ai         # Vast.ai integration
+    │   ├── client.py    # VastClient (auto-mocks when no API key)
+    │   ├── mock.py      # MockVastClient for development
+    │   └── schemas.py   # Vast.ai Pydantic models
+    ├── /runpod          # RunPod integration
+    │   ├── client.py    # RunPodClient (GraphQL API)
+    │   ├── mock.py      # MockRunPodClient for development
+    │   └── schemas.py   # RunPod Pydantic models
+    └── /lambda_labs     # Lambda Labs integration
+        ├── client.py    # LambdaClient (REST API)
+        ├── mock.py      # MockLambdaClient for development
+        └── schemas.py   # Lambda Labs Pydantic models
 
 /agent                    # Data Plane (Python daemon)
 ├── agent.py             # Main loop: register → heartbeat → process commands
@@ -87,6 +100,15 @@ alembic upgrade head
 
 /shared                   # API contracts
 └── schemas.py           # Pydantic models for Brain↔Agent communication
+
+/alembic                  # Database migrations
+├── env.py               # Async SQLAlchemy migration env
+└── versions/            # Migration files
+
+/tests                    # Test suite
+├── adapters/            # Provider adapter tests
+├── services/            # Service tests
+└── conftest.py          # Pytest fixtures
 ```
 
 ## Key Technical Details
@@ -107,6 +129,34 @@ alembic upgrade head
 - MyPy: strict mode enabled
 - Pytest: asyncio_mode="auto"
 
+## Multi-Provider System
+
+The platform aggregates GPU offers from three providers:
+
+| Provider | API Type | Mock Support | Key Features |
+|----------|----------|--------------|--------------|
+| Vast.ai | REST | ✅ | Marketplace, lowest prices |
+| RunPod | GraphQL | ✅ | Secure + Community cloud |
+| Lambda Labs | REST | ✅ | Enterprise, InfiniBand |
+
+**Pricing Strategies:**
+- `LOWEST_PRICE` - Optimize for cheapest options
+- `BEST_VALUE` - Price per GB VRAM
+- `HIGHEST_RELIABILITY` - Prioritize reliable providers
+- `BALANCED` - Mix of price, value, and reliability
+
+**Auto-Failover:**
+The system automatically tries alternative providers if one fails:
+```python
+# Example: Create instance with failover
+instance, provider = await multi_provider.create_instance_with_failover(
+    gpu_type="RTX 4090",
+    config=instance_config,
+    max_price=1.0,
+    preferred_providers=["runpod", "vast_ai"],
+)
+```
+
 ## GPU Sourcing System
 
 The sourcing system discovers and provisions GPU instances from providers automatically.
@@ -126,9 +176,50 @@ The sourcing system discovers and provisions GPU instances from providers automa
 1. Create `brain/adapters/{provider}/` with schemas.py, mock.py, client.py
 2. Implement `BaseProviderAdapter` interface
 3. Add provider to `ProviderType` enum in `shared/schemas.py`
-4. Update `SourcingService` to use new client
+4. Register in `MultiProviderService._get_all_clients()`
+5. Update `SourcingService` to use new client
+
+## Dashboard API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /dashboard/overview` | Overview statistics |
+| `GET /dashboard/provider-health` | Provider health status |
+| `GET /dashboard/gpu-availability` | GPU availability across providers |
+| `GET /dashboard/gpu-offers` | Available GPU offers with pricing |
+| `GET /dashboard/cost-analytics` | Cost analytics (admin only) |
+| `GET /dashboard/price-comparison` | Price comparison across providers |
+
+## Security Features
+
+**Rate Limiting:**
+- 60 requests/minute per client
+- 1000 requests/hour per client
+- Based on API key or IP address
+- Excludes health check endpoints
+
+**Security Headers:**
+- X-Content-Type-Options: nosniff
+- X-Frame-Options: DENY
+- X-XSS-Protection: 1; mode=block
+- Strict-Transport-Security (production only)
+- Content-Security-Policy
+
+**Input Validation:**
+- SQL injection pattern detection
+- XSS pattern detection
+- Content length limits
+- Content type validation
 
 ## Business Context
 
-Phase 1 (current): Arbitrage model - rent from providers, add 20-30% markup
-Phase 2 (planned): Marketplace - community providers list GPUs, platform takes transaction fee
+**Phase 1 (current):** Arbitrage model
+- Rent GPUs from Vast.ai, RunPod, Lambda Labs
+- Apply 25% markup (configurable)
+- Unified API and billing
+- Automatic failover across providers
+
+**Phase 2 (planned):** Marketplace
+- Community providers list their GPUs
+- Platform takes transaction fee
+- Provider verification system

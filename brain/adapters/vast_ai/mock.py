@@ -326,15 +326,14 @@ class MockVastClient(BaseProviderAdapter):
         if not vast_instance:
             return False
 
-        # Mark instance as stopped
-        vast_instance.actual_status = VastInstanceStatus.EXITED
-        vast_instance.end_date = datetime.utcnow().timestamp()
-
         # Free up the offer
         for offer in self._offers:
             if offer.machine_id == vast_instance.machine_id:
                 offer.rented = False
                 break
+
+        # Remove the instance (simulating destruction)
+        del self._instances[instance_id]
 
         return True
 

@@ -2,16 +2,19 @@
 GPU Provisioning Service.
 
 Handles creating and managing provisioned GPU instances from offers.
+Supports multiple providers with automatic failover.
 """
 
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from brain.adapters.base import InstanceConfig, InstanceStatus
+from brain.adapters.base import GpuOffer, InstanceConfig, InstanceStatus
+from brain.adapters.lambda_labs import LambdaClient, LambdaGpuOffer
+from brain.adapters.runpod import RunPodClient, RunPodGpuOffer
 from brain.adapters.vast_ai import VastClient, VastGpuOffer
 from brain.config import get_settings
 from brain.models.node import Node
@@ -19,10 +22,18 @@ from brain.models.provisioned_instance import (
     ProvisionedInstance,
     ProvisioningStatus,
 )
+from brain.services.multi_provider import (
+    MultiProviderService,
+    PricingStrategy,
+    get_multi_provider_service,
+)
 from shared.schemas import ProviderType
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# Type alias for provider-specific offers
+ProviderOffer = Union[VastGpuOffer, RunPodGpuOffer, LambdaGpuOffer, GpuOffer]
 
 
 class ProvisioningService:
@@ -30,21 +41,28 @@ class ProvisioningService:
     Service for provisioning and managing GPU instances.
 
     Handles:
-    - Creating instances from offers
+    - Creating instances from offers (supporting multiple providers)
+    - Automatic failover across providers
     - Tracking instance status through lifecycle
     - Matching agent registrations to provisioned instances
     - Cost tracking
     - Instance termination
     """
 
-    def __init__(self, vast_client: Optional[VastClient] = None):
+    def __init__(
+        self,
+        vast_client: Optional[VastClient] = None,
+        multi_provider: Optional[MultiProviderService] = None,
+    ):
         """
         Initialize provisioning service.
 
         Args:
-            vast_client: Optional VastClient instance
+            vast_client: Optional VastClient instance (for backward compatibility)
+            multi_provider: Optional MultiProviderService instance
         """
         self._vast_client = vast_client
+        self._multi_provider = multi_provider
 
     @property
     def vast_client(self) -> VastClient:
@@ -55,6 +73,22 @@ class ProvisioningService:
                 use_mock=settings.use_mock_providers,
             )
         return self._vast_client
+
+    @property
+    def multi_provider(self) -> MultiProviderService:
+        """Lazily initialize multi-provider service."""
+        if self._multi_provider is None:
+            self._multi_provider = get_multi_provider_service()
+        return self._multi_provider
+
+    def _provider_type_from_string(self, provider: str) -> ProviderType:
+        """Convert provider string to ProviderType enum."""
+        mapping = {
+            "vast_ai": ProviderType.VAST_AI,
+            "runpod": ProviderType.RUNPOD,
+            "lambda_labs": ProviderType.LAMBDA_LABS,
+        }
+        return mapping.get(provider, ProviderType.VAST_AI)
 
     def _generate_install_script(self) -> str:
         """Generate the agent installation script for onstart."""
@@ -152,6 +186,150 @@ echo "GPU Agent installation complete"
         await db.flush()
         return instance
 
+    async def provision_with_failover(
+        self,
+        gpu_type: str,
+        db: AsyncSession,
+        max_price: Optional[float] = None,
+        min_vram_mb: Optional[int] = None,
+        docker_image: str = "nvidia/cuda:12.2.0-base-ubuntu22.04",
+        preferred_providers: Optional[list[str]] = None,
+    ) -> ProvisionedInstance:
+        """
+        Provision a GPU instance with automatic failover across providers.
+
+        Args:
+            gpu_type: GPU type to provision (e.g., "RTX 4090", "A100")
+            db: Database session
+            max_price: Maximum acceptable hourly price
+            min_vram_mb: Minimum VRAM requirement
+            docker_image: Docker image to use
+            preferred_providers: Providers to try first (in order)
+
+        Returns:
+            Created ProvisionedInstance record
+        """
+        logger.info(
+            f"Provisioning with failover: {gpu_type} "
+            f"(max ${max_price}/hr, min {min_vram_mb}MB VRAM)"
+        )
+
+        # Get best offers from multi-provider service
+        offers = await self.multi_provider.find_best_offers(
+            gpu_type=gpu_type,
+            max_price=max_price,
+            min_vram_mb=min_vram_mb,
+            strategy=PricingStrategy.BALANCED,
+            limit=10,
+        )
+
+        if not offers:
+            raise RuntimeError(f"No offers found for {gpu_type}")
+
+        # Reorder by preferred providers if specified
+        if preferred_providers:
+            def sort_key(agg):
+                try:
+                    pref_idx = preferred_providers.index(agg.offer.provider)
+                except ValueError:
+                    pref_idx = len(preferred_providers)
+                return (pref_idx, agg.value_score)
+
+            offers.sort(key=sort_key)
+
+        # Try each offer until one succeeds
+        errors = []
+        for agg in offers:
+            offer = agg.offer
+            provider = offer.provider
+            provider_type = self._provider_type_from_string(provider)
+
+            # Create database record
+            instance = ProvisionedInstance(
+                provider_type=provider_type,
+                provider_offer_id=offer.offer_id,
+                status=ProvisioningStatus.PENDING,
+                gpu_type=offer.gpu_name,
+                gpu_count=offer.gpu_count,
+                gpu_vram_mb=offer.gpu_vram_mb,
+                hourly_cost=offer.hourly_price,
+                docker_image=docker_image,
+                onstart_script=self._generate_install_script(provider),
+            )
+            db.add(instance)
+            await db.flush()
+            await db.refresh(instance)
+
+            try:
+                instance.status = ProvisioningStatus.CREATING
+
+                config = InstanceConfig(
+                    docker_image=docker_image,
+                    disk_gb=max(20.0, offer.disk_gb * 0.1),
+                    onstart_script=self._generate_install_script(provider),
+                    env_vars={
+                        "PROVIDER_TYPE": provider,
+                        "PROVIDER_INSTANCE_ID": str(instance.id),
+                        "BRAIN_URL": settings.brain_public_url,
+                    },
+                    label=f"gpu-orch-{instance.id[:8]}",
+                )
+
+                # Create instance using multi-provider service
+                client = self.multi_provider._get_client_for_provider(provider)
+                if not client:
+                    raise RuntimeError(f"No client for provider: {provider}")
+
+                provider_instance = await client.create_instance(offer.offer_id, config)
+
+                instance.provider_instance_id = provider_instance.instance_id
+                instance.status = ProvisioningStatus.STARTING
+                instance.started_at = datetime.utcnow()
+
+                logger.info(
+                    f"Instance created on {provider}: {provider_instance.instance_id} "
+                    f"({offer.gpu_name} @ ${offer.hourly_price}/hr)"
+                )
+
+                await db.flush()
+                return instance
+
+            except Exception as e:
+                error_msg = f"{provider}: {str(e)}"
+                errors.append(error_msg)
+                logger.warning(f"Failed to provision on {provider}: {e}")
+
+                # Mark this attempt as failed
+                instance.status = ProvisioningStatus.FAILED
+                instance.status_message = str(e)
+                await db.flush()
+
+        # All providers failed
+        raise RuntimeError(
+            f"Failed to provision {gpu_type} on any provider. Errors:\n"
+            + "\n".join(errors)
+        )
+
+    def _generate_install_script(self, provider: str = "vast_ai") -> str:
+        """Generate the agent installation script for onstart."""
+        brain_url = settings.brain_public_url.rstrip("/")
+
+        return f"""#!/bin/bash
+set -e
+
+# GPU Agent Auto-Install Script
+echo "Installing GPU Agent..."
+
+# Set environment for agent
+export BRAIN_URL="{brain_url}"
+export PROVIDER_TYPE="{provider}"
+
+# Download and run install script
+curl -sSL "{brain_url}/api/v1/nodes/install.sh" | bash -s -- --auto
+
+echo "GPU Agent installation complete"
+"""
+
     async def check_instance_status(
         self,
         instance: ProvisionedInstance,
@@ -171,8 +349,11 @@ echo "GPU Agent installation complete"
             return instance.status
 
         try:
-            provider_instance = await self.vast_client.get_instance(
-                instance.provider_instance_id
+            # Use appropriate client based on provider type
+            provider = instance.provider_type.value
+            provider_instance = await self.multi_provider.get_instance_status(
+                instance.provider_instance_id,
+                provider,
             )
 
             if not provider_instance:
@@ -254,9 +435,10 @@ echo "GPU Agent installation complete"
             return False
 
         # Look for a node that registered with this provider instance ID
+        # Support any provider type
         result = await db.execute(
             select(Node).where(
-                Node.provider_type == ProviderType.VAST_AI,
+                Node.provider_type == instance.provider_type,
                 Node.provider_id == instance.provider_instance_id,
             )
         )
@@ -305,8 +487,11 @@ echo "GPU Agent installation complete"
         try:
             instance.status = ProvisioningStatus.TERMINATING
 
-            success = await self.vast_client.terminate_instance(
-                instance.provider_instance_id
+            # Use appropriate client based on provider type
+            provider = instance.provider_type.value
+            success = await self.multi_provider.terminate_instance(
+                instance.provider_instance_id,
+                provider,
             )
 
             if success:
@@ -388,6 +573,8 @@ echo "GPU Agent installation complete"
         """Clean up resources."""
         if self._vast_client:
             await self._vast_client.close()
+        if self._multi_provider:
+            await self._multi_provider.close()
 
 
 # Global singleton instance
