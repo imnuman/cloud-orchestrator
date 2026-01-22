@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from brain.models.pod import Pod
     from brain.models.billing import Transaction
     from brain.models.provider import Provider
+    from brain.models.api_key import APIKey
 
 
 class User(Base):
@@ -65,6 +66,9 @@ class User(Base):
     )
     provider: Mapped[Optional["Provider"]] = relationship(
         "Provider", back_populates="user", uselist=False, lazy="selectin"
+    )
+    api_keys: Mapped[list["APIKey"]] = relationship(
+        "APIKey", back_populates="user", lazy="selectin", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

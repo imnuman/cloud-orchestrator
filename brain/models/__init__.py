@@ -20,6 +20,7 @@ from brain.models.model_catalog import (
     ServingBackend,
     DeploymentStatus,
 )
+from brain.models.api_key import APIKey, APIKeyScope
 
 __all__ = [
     "User",
@@ -41,4 +42,6 @@ __all__ = [
     "ModelCategory",
     "ServingBackend",
     "DeploymentStatus",
+    "APIKey",
+    "APIKeyScope",
 ]

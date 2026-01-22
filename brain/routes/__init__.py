@@ -9,6 +9,7 @@ from brain.routes.models import router as models_router
 from brain.routes.proxy import router as proxy_router
 from brain.routes.websocket import router as websocket_router
 from brain.routes.billing import router as billing_router
+from brain.routes.api_keys import router as api_keys_router
 
 __all__ = [
     "auth_router",
@@ -21,4 +22,5 @@ __all__ = [
     "proxy_router",
     "websocket_router",
     "billing_router",
+    "api_keys_router",
 ]
