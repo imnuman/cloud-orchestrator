@@ -24,6 +24,7 @@ from brain.routes import (
     websocket_router,
     billing_router,
     api_keys_router,
+    admin_router,
 )
 
 settings = get_settings()
@@ -82,6 +83,7 @@ app.include_router(providers_router, prefix=settings.api_prefix)
 app.include_router(models_router, prefix=settings.api_prefix)
 app.include_router(billing_router, prefix=settings.api_prefix)
 app.include_router(api_keys_router, prefix=settings.api_prefix)
+app.include_router(admin_router, prefix=settings.api_prefix)
 
 # Model proxy routes (OpenAI-compatible API)
 # Mounted at /api/v1/v1/* to provide /api/v1/v1/chat/completions etc.
