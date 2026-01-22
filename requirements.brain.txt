@@ -21,6 +21,7 @@ passlib[bcrypt]>=1.7.4
 # Validation & Settings
 pydantic>=2.6.0
 pydantic-settings>=2.1.0
+email-validator>=2.0.0
 
 # HTTP Client (for provider adapters)
 httpx>=0.26.0

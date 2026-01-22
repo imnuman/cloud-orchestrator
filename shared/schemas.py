@@ -249,6 +249,7 @@ class UserResponse(BaseModel):
     balance: float = Field(0.0, description="Account balance")
     created_at: datetime
     is_active: bool = True
+    is_verified: bool = Field(False, description="Whether email is verified")
     is_provider: bool = Field(False, description="Whether user is also a GPU provider")
 
 

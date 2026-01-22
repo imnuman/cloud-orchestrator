@@ -49,6 +49,23 @@ class Settings(BaseSettings):
     stripe_webhook_secret: Optional[str] = None  # whsec_xxx
     stripe_enabled: bool = False  # Enable Stripe payments
 
+    # Email Configuration
+    email_provider: str = "console"  # console, smtp, sendgrid
+    email_from_address: str = "noreply@gpucloud.example.com"
+    email_from_name: str = "GPU Cloud"
+    email_verification_required: bool = False  # Require email verification to login
+    email_verification_token_expire_hours: int = 24
+
+    # SMTP Settings (if email_provider = "smtp")
+    smtp_host: Optional[str] = None
+    smtp_port: int = 587
+    smtp_username: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_use_tls: bool = True
+
+    # SendGrid Settings (if email_provider = "sendgrid")
+    sendgrid_api_key: Optional[str] = None
+
     # Node Management
     heartbeat_timeout_seconds: int = 90  # Mark node offline after missing heartbeats
     heartbeat_interval_seconds: int = 30  # Expected heartbeat interval
